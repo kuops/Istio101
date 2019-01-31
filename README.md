@@ -403,3 +403,15 @@ kubectl delete -f ./configs/kube
 kubectl delete -f ./configs/istio
 kubectl delete -f ./configs/opencensus
 ```
+
+
+## 自定义安装 istio
+
+
+使用 helm 模板生成
+
+```
+helm template istio-1.0.0/install/kubernetes/helm/istio --name istio --namespace istio-system --set global.mtls.enabled=true --set tracing.enabled=true --set servicegraph.enabled=true --set grafana.enabled=true > istio.yaml
+```
+
+您可以根据[这些参数](https://istio.io/docs/reference/config/installation-options/)自定义安装，但请注意，如果没有启用这些功能，此演示将无法运行！
