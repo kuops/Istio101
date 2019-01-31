@@ -1,132 +1,81 @@
 # Istio and OpenCensus 101 - Lightning Demo
 
-This is the code I use for my Istio 101 talk and Istio and OpenCensus talk. Please take a look! I assume some prior knowledge of Kubernetes, but it's not totally required.
 
-Talk Video:
-[![Talk YouTube Link](https://i.ytimg.com/vi/8OjOGJKM98o/maxresdefault.jpg)](https://www.youtube.com/watch?v=8OjOGJKM98o)
+forked from [thesandlord/Istio101](https://github.com/thesandlord/Istio101)
 
-# TL;DR - I want to skip setup
 
-Run this:
+练习此任务之前，需要安装 kubernetes 和 istio ，可以参考 [vagrant-kubeadm](https://github.com/kuops/vagrant-kubeadm)，初始化一个集群
 
-`make create-cluster deploy-istio build push deploy-stuff`
 
-Run this in another terminal:
+## Code
 
-`make start-monitoring-services`
+Code 作用是，向下游服务生成一个请求，获取请求结果，并且把 name ，延迟信息，和 下游 url 连接起来
 
-# Setup
 
-## Cluster Setup
-You need a Kubernetes 1.10 or newer cluster.
+## build 镜像
 
-You will also need Docker and kubectl 1.9.x or newer installed on your machine, as well as the Google Cloud SDK. You can install the Google Cloud SDK (which will also install kubectl) [here](https://cloud.google.com/sdk).
-
-To create the cluster with Google Kubernetes Engine, run this command:
-
-`make create-cluster`
-
-This will create a cluster called "my-istio-cluster" with 4 nodes in the us-west1-b region. This will deploy into the current active project set in your Google Cloud SDK. You can change this by passing in a custom value for the Project ID and/or Zone.
-
-`make create-cluster PROJECT_ID=your-custom-id-here ZONE=your-custom-zone`
-
-## Istio Setup
-This project assumes you are running on x64 Linux. If you are running on another platform, I highly reccomend using [Google Cloud Shell](https://cloud.google.com/shell) to get a free x64 Linux environment.
-
-To deploy Istio into the cluster, run
-
-`make deploy-istio`
-
-This will deploy the Istio services and control plane into your Kubernetes Cluster. Istio will create its own Kubernetes Namespace and a bunch of services and deployments. In addition, this command will install helper services. Jaeger for tracing, Prometheus for monitoring, Servicegraph to visualize your microservices, and Grafana for viewing metrics.
-
-## Start Helper Services
-
-Run this in another terminal:
-
-`make start-monitoring-services`
-
-This will create tunnels into your Kubernetes cluster for [Jaeger](http://localhost:16686), [Servicegraph](http://localhost:8088), and [Grafana](http://localhost:3000). This command will not exit as it keeps the connection open.
-
-## Create Docker Container
-
-To build and push the code, run:
-
-`make build push`
-
-This will create the Docker containers and push it up to your Google Container Registry. 
-
-Again, you can pass in a custom project ID, but make sure it is the same as before:
-
-`make build push PROJECT_ID=your-custom-id-here`
-
-*Note:* This will build three containers, one for the vanilla Istio demo, and two for the OpenCensus demo.
-
-## Deploy Kubernetes Services
-
-This will create the three Deployments and the three Services.
-
-`make deploy-stuff`
-
-Again, you can pass in a custom project ID, but make sure it is the same as before:
-
-`make deploy-stuff PROJECT_ID=your-custom-id-here`
-
-# The Code
-
-The above command deployed three microservices all running the same code, with a different configuration for each. The [code](./code/code-only-istio/index.js) is super simple, all it does it make a request to a downstream service, takes the result, and concatenates it with the its own name, some latency information, and the downstream URL.
-
-This is a great demo app for Istio, because you can chain together an "infinite" number of these to create deep trees of services that simulate real microservice deployments.
-
-# Using Istio
-
-Let's see the Kubernetes resources:
-
-`make get-stuff`
-
-You should see something like this:
 ```
-kubectl get pods && kubectl get svc && kubectl get ingress
-NAME                                 READY     STATUS    RESTARTS   AGE
-backend-prod-1666293437-dcrnp        2/2       Running   0          21m
-frontend-prod-3237543857-g8fpp       2/2       Running   0          22m
-middleware-canary-2932750245-cj8l6   2/2       Running   0          21m
-middleware-prod-1206955183-4rbpt     2/2       Running   0          21m
-NAME         CLUSTER-IP    EXTERNAL-IP       PORT(S)        AGE
-backend      10.3.252.16   <none>            80/TCP         22m
-frontend     10.3.248.79   <none>            80/TCP         22m
-kubernetes   10.3.240.1    <none>            443/TCP        23m
-middleware   10.3.251.46   <none>            80/TCP         22m
-NAME                   TYPE           CLUSTER-IP     EXTERNAL-IP     PORT(S)                                                                                                     AGE
-istio-ingressgateway   LoadBalancer   10.3.246.226   35.XXX.XXX.XXX  80:31380/TCP,443:31390/TCP,31400:31400/TCP,15011:31754/TCP,8060:32056/TCP,15030:31770/TCP,15031:32112/TCP   2m
+# 克隆代码
+
+git clone https://github.com/kuops/Istio101.git
+
+# 更改为自己的 repo 名称
+DOCKER_REPO=kuopsme
+
+# Build Docker 镜像
+cd Istio101
+docker build -t ${DOCKER_REPO}/istiotest:1.0 ./code/code-only-istio
+docker build -t ${DOCKER_REPO}/istio-opencensus-simple:1.0 ./code/code-opencensus-simple
+docker build -t ${DOCKER_REPO}/istio-opencensus-full:1.0 ./code/code-opencensus-full
+docker push ${DOCKER_REPO}/istiotest:1.0
+docker push ${DOCKER_REPO}/istio-opencensus-simple:1.0
+docker push ${DOCKER_REPO}/istio-opencensus-full:1.0
 ```
 
-## Where is Istio?
+> 这三个镜像，一个用于 `vanilla Istio` 演示，其余两个用于 `OpenCensus` 演示
 
-Aside from the "istio-ingressgateway", you might notice there is no trace of Istio to be seen. This is because the Istio control plane is launched into its own Kubernetes Namespace. You can see the Istio resources with this command:
 
-`kubectl get pods --namespace=istio-system`
+## 部署 kubernetes Service
 
-We have launched Istio in "auto inject" mode. After the Makefile deployed Istio, the Makefile ran this command:
+```
+kubectl apply -f ./configs/kube/services.yaml
+sed "s@<DOCKER_REPO>@${DOCKER_REPO}@g" ./configs/kube/deployments.yaml | kubectl apply -f -
+```
 
-`kubectl label namespace default istio-injection=enabled`
 
-This means that any Pods that Kubernetes creates in the default namespace will automatically get a Istio sidecar proxy attached to it. This proxy will enforce Istio policies without any action from the app! You can also run Istio in the normal mode, and add the proxy into the Kubernetes YAML manually. Again, there is no change to the app, but the Kubernetes Deployment is manually patched. This is useful if you want some services to bypass Istio.
+查看部署状态
 
-## Trying it out
+```
+kubectl get pods && kubectl get svc && kubectl get svc -n istio-system istio-ingressgateway
+NAME                                 READY   STATUS      RESTARTS   AGE
+backend-prod-d6668447f-55m9p         2/2     Running     0          6m47s
+frontend-prod-5555b65f65-rr5sd       2/2     Running     0          6m47s
+middleware-canary-546bf48565-czhkr   2/2     Running     0          6m47s
+middleware-prod-569c49569-58r66      2/2     Running     0          6m47s
+NAME              TYPE        CLUSTER-IP       EXTERNAL-IP   PORT(S)                              AGE
+backend           ClusterIP   10.105.20.225    <none>        80/TCP,9464/TCP                      7m11s
+frontend          ClusterIP   10.101.188.197   <none>        80/TCP,9464/TCP                      7m11s
+middleware        ClusterIP   10.99.47.19      <none>        80/TCP,9464/TCP                      7m11s
+NAME                   TYPE           CLUSTER-IP     EXTERNAL-IP   PORT(S)                                                                                                                   AGE
+istio-ingressgateway   LoadBalancer   10.99.78.215   10.0.7.110    80:31380/TCP,443:31390/TCP,31400:31400/TCP,15011:31104/TCP,8060:32276/TCP,853:32744/TCP,15030:30303/TCP,15031:32543/TCP   141m
+```
 
-You may notice that none of our services have External IPs. This is because we want Istio to manage all inboud traffic. To do this, Istio uses an [Ingress Gateways](https://istio.io/docs/tasks/traffic-management/ingress/#configuring-ingress-using-an-istio-gateway).
+> 由于 istio 使用了自动注入模式，所以创建的 Pod 无需任何操作，将自动通过 istio sidecar 进行流量代理
 
-Visit the External IP of the "istio-ingressgateway". At this point, you should get an error!
 
-**Don't worry! Everything is ok!**
+## 使用 istio 管理服务
 
-Right now, the gateway is not set-up, so it is dropping all traffic at the edge. Let's set it up with this command:
+我们使用 istio 来进行流量管理，istio 使用 ingresgateway 来管理服务:
 
-`kubectl create -f ./configs/istio/ingress.yaml`
+```
+kubectl create -f ./configs/istio/ingress.yaml
+```
+此文件此文件包含两个对象。第一个对象是 Gateway ，它允许我们绑定到集群中存在的 `istio-ingressgateway`，
+第二个对象是 `VirtualService` ,让我们应用路由规则。由于我们在 Gateway 中 hosts 使用了通配符 `*` ,
+代表所有的流量都通过该网关进行代理，又由于我们 `VirtualService` 只有一个路由规则，将流量都代理到了 `frontend` 的 service 上
 
-This file contains two objects. The first object is a Gateway, which will allow us to bind to the "istio-ingressgateway" that exists in the cluster. The second object is a VirtualService, which let's us apply routing rules. Because we are using a wildcard (*) charater for the host and only one route rule, all traffic from this gateway to the frontend service.
 
-Visit the IP address again, and you should see that it is working!
+现在我们访问 `istio-ingressgateway` 的 EXTERNAL-IP ，就可以访问到服务了,下面是我们服务的返回结果
 
 ```
 frontend-prod - 0.287secs
@@ -134,21 +83,21 @@ http://middleware/ -> middleware-canary - 0.241secs
 http://backend/ -> backend-prod - 0.174secs
 http://time.jsontest.com/ -> StatusCodeError: 404 - ""
 ```
-You can see that the frontend service requests the middleware service, which requests the backend service, which finally requests time.jsontest.com
 
-## Fixing the 404
+你可以看到 frontend service 请求了 middleware service, middleware 请求了后端，后端请求了 `time.jsontest.com`
 
-You might notice that time.jsontest.com is returning a 404. This is because by default, Istio blocks all Egress traffic out of the cluster. This is a great security practice, as it prevents malicious code from calling home or your code from talking to unverified 3rd party services.
 
-Let's unblock time.jsontest.com by creating a [ServiceEntry](https://istio.io/docs/tasks/traffic-management/egress/).
+## 修复 404
 
-You can see the ServiceEntry that we are creating [here](./configs/istio/egress.yaml), and notice that it allows both HTTP and HTTPS access to time.jsontest.com
+您可能会注意到 time.jsontest.com 正在返回 404.这是因为默认情况下，Istio 会阻止群集中的所有 Egress 流量。这是一种很好的安全措施，因为它可以防止恶意代码调用或您的代码与未经验证的第三方服务进行通信。
 
-To apply this rule, run:
+我们创建 ServiceEntry 允许对 `time.jsontest.com` 的访问
 
-`kubectl apply -f ./configs/istio/egress.yaml`
+```
+kubectl apply -f ./configs/istio/egress.yaml
+```
 
-Now, you should see the services fully working!
+现在，我们再访问，服务就正常了
 
 ```
 frontend-prod - 0.172secs
@@ -161,122 +110,119 @@ http://time.jsontest.com/ -> {
 }
 ```
 
-## Fixing the Flip Flop
 
-If you refresh the page enough times, you might see a small change between loads. Sometimes, the middleware service is called `middleware-canary` and sometimes is it called `middleware-prod`
+## 修复 Flip Flop
 
-This is because there is a single Kubernetes service called middleware sending traffic to two deployments (called middleware-prod and middleware-canary). This is a really powerful feature that let's you do things like Blue-Green deployments and Canary testing. Using Servicegraph, we can actually see this visually.
+当你刷新页面时，会发现 middleware 服务，会在两个版本之间随机调用，`middleware-canary` 和 `middleware-prod` 这是因为 service 选择的标签为 `app: middleware` ，这两个 deployment 都有此标签,这是一个非常强大的功能，可以使我们执行 Blue-Green 和 Canay 操作，使用 Servicegraph 我们可以直观的看到它。
 
-Open Servicegraph: http://localhost:8088/dotviz
+打开 Servicegraph `http://servicegraph:8088/dotviz`
 
-You should see something like this:
-![Servicegraph](./servicegraph.png)
+你应该能看到如下
 
-You can see that traffic goes from frontend (prod), and then is sent to either the middleware (prod) or middleware (canary), and then finally goes backend (prod)
+![servicegraph](images/servicegraph.png)
 
-With Istio, you can control where traffic goes using a [VirtualService](https://istio.io/docs/reference/config/istio.networking.v1alpha3/#VirtualService). For example, you can send 80% of the all traffic that is going to the middleware service to prod and 20% to canary. In this case, let's set 100% of the traffic to prod.
 
-You can see the VirtualServices [here](./configs/istio/routing-1.yaml).
+你可以看到，流量从 frontend (prod), 发动到了 middleware (prod) 或 middleware (canary), 最后发送到了 backend (prod) 
 
-There are a few interesting things about this file.
+使用 istio ，你可以使用 `VirtualService` 控制流量的来源，例如，80% 流量到 prod, 20% 到 canay。
 
-You might notice that the frontend VirtualService looks different than the others. This is because we are binding the frontend service to the gateway.
 
-Next comes the way we are making all traffic go to the "prod" deployment. This is the key section for the middleware VirtualService is:
-```yaml
-  http:
-  - route:
-    - destination:
-        host: middleware
-        subset: prod
+现在我们使百分之百的流量到达 prod ,我们需要修改 `VirtualService` 使用 subset
+
+```
+  http：
+  - route：
+    - destination：
+         host：middleware 
+        subset：prod
 ```
 
-You might be wondering, where is this "subset" defined? How does Istio know what "prod" is?
+这个 subset 需要在 DestinationRules 中定义
 
-You can define these subsets in something called a [DestinationRule](https://istio.io/docs/reference/config/istio.networking.v1alpha3/#DestinationRule).
-
-Our DestinationRules are defined [here](./configs/istio/destinationrules.yaml). Let's look at the important part of the middleware rule:
-
-```yaml
-spec:
-  host: middleware
-  trafficPolicy:
-    tls:
-      mode: ISTIO_MUTUAL
-  subsets:
-  - name: prod
-    labels:
-      version: prod
-  - name: canary
-    labels:
-      version: canary
+```
+spec：
+   host：middleware 
+  trafficPolicy：
+     tls：
+       mode：ISTIO_MUTUAL 
+  subsets：
+  - name：prod 
+    labels：
+       version：prod 
+  - name：canary 
+    labels：
+       version：canary
 ```
 
-First, we are setting a trafficPolicy that ensures that all traffic is encrypted with Mutual TLS. This means that we get encryption and we can actually restrict which services get access to other services inside the mesh. Even if someone breaks into your cluster, they can't impersonate another service if you are using mTLS, thus limiting the damange they can do.
+首先，我们正在设置一个流量策略，以确保所有流量都使用相互 TLS 加密。这意味着我们得到了加密，实际上我们可以限制哪些服务可以访问网格中的其他服务。即使有人闯入您的集群，如果您使用 mTLS，他们也无法模拟其他服务，从而限制了他们可以做的破坏。
 
-Next, you can see how the subsets are defined. We give each subset a name, and then use Kubernetes lables to select the pods in each subset. We are creating a prod and canary subet in this case.
 
-Let's create the DestinationRules and the VirtualServices:
+接下来，您可以看到如何定义子集。我们为每个子集命名，然后使用 Kubernetes labelselector 选择每个子集中的pod。在这种情况下，我们正在创建一个 prod 和 canary subet 。
 
-`kubectl apply -f ./configs/istio/destinationrules.yaml`
 
-`kubectl apply -f ./configs/istio/routing-1.yaml`
+```
+kubectl apply -f ./configs/istio/destinationrules.yaml
 
-Now all traffic will be sent to the middleware-prod service.
-
-## Create Some Instability
-
-In the real world, services fail all the time. In a microservices world, this means you can have thousands of downstream failures, and your app needs to be able to handle them. Istio's Service Mesh can be configured to automatically handle many of these failures so your app doesn't have to!
-
-_Note: Istio has a feature call [Fault Injection](https://istio.io/docs/tasks/traffic-management/fault-injection/) that can simulate errors. This means you don't need to write bad code to test if your app can handle failure._
-
-While the code we deployed is very stable, there is a hidden function that will cause the app to randomly return a 500!
-
-The code is triggered by a HTTP Header called "fail" which is a number between 0 and 1, with 0 being a 0% chance of failure, and 1 being 100% chance.
-
-I'll be using [Postman](https://www.getpostman.com/) to send the headers and see the result.
-
-![Default Route Rules](./no_retry.gif)
-
-With a 30% failure percentage, you can see the app failing a lot, but sometimes it works. Bumping that to 50%, the app fails almost every time! This is because each service forwards headers to the downstream services, so this is a cascading error!
-
-## Fix it with Istio
-
- Because the request will sometimes work and sometimes not work, this is called a flaky error. These are hard to debug because they are hard to find! If there is a very low percentage chance, then the error will only be triggered maybe one time in a million. However, that might be an important request that can potentially break everything. There is a simple fix for this type of flaky error, just retry the request! This only works up to a certain point, but can easily pave over flaky errors that have low probabilities of occurring.
-
- Normally, you would need to write this retry logic in every single one of your microservices for every single network request. Thankfully, Istio provides this out of the box so you don't need to modify your code at all!
-
- Let's modify the VirtualServices to add in some retry logic. [Here](./configs/istio/routing-2.yaml) is the updated rule. There is an additional section for each that looks like this:
-
- ```yaml
-    retries:
-      attempts: 3
-      perTryTimeout: 2s
+kubectl apply -f ./configs/istio/routing-1.yaml
 ```
 
-This means that Istio will retry the request three times before giving up, and will wait 2 seconds per retry (in case the downstream service hangs). Your app just sees it as one request, all the retry complexity is abstracted away.
+现在所有流量都被发送到了 middleware-prod service
 
-Apply the rule:
 
-`kubectl apply -f ./configs/istio/routing-2.yaml`
+## 创造一些不稳定
 
-And refresh the page:
+在现实世界中，服务始终失败。在微服务领域，这意味着您可以拥有数千个下游故障，并且您的应用程序需要能够处理它们。Istio 的服务网格可以配置为自动处理许多这些故障，因此您的应用程序不需要做这些。
 
-![No more 500 errors with Retry](./working.gif)
+注意：Istio 有一个功能调用故障注入，可以模拟错误。这意味着您无需编写错误代码来测试您的应用是否可以处理故障。
 
-And now, all the errors are gone!
 
-## What about that middleware canary?
+虽然我们部署的代码非常稳定，但有一个隐藏的功能会导致应用程序随机返回500！
 
-If you remember, there are two middleware services. Prod and Canary. Right now, the rules send all traffic to Prod. This is good, because we don't want normal people accessing the Canary build.
+代码由名为 "fail" 的 HTTP Headers 触发，该 Header 的值 0 到 1 之间的数字，0 表示失败的概率为 0% 1表示 100% 的概率。
 
-However, we do want our dev team and trusted testers to access it. Thankfully, Istio makes doing this quite easy!
 
-Routing Rules can have conditional routing based on things like headers, cookies, etc. We could check if a user is part of the trusted group and set a cookie that let's them access the canary service. For simplicity's sake, I'm going to use a header called "x-dev-user" and check if the value is "super-secret".
+我将使用Postman发送 Header 并查看结果。
 
-You can see the new rule in [this file](./configs/istio/routing-3.yaml)
+![no_retry](images/no_retry.gif)
 
-```yaml
+
+如果失败百分比为30％，您可以看到应用程序失败很多，但有时会有效。将该值降至50％，应用程序几乎每次都会失败！这是因为每个服务都会将 Header 转发给下游服务，因此这是一个级联错误！
+
+
+## 用 istio 修复
+
+因为请求有时会工作，有时不工作，所以这被称为片状错误。这些很难调试，因为它们很难找到！如果有一个非常低的百分比的机会，那么错误将只触发可能一次在一百万。然而，这可能是一个可能破坏一切的重要请求。对于这种类型的片状错误有一个简单的修复方法，请重试请求！这只在某一点起作用，但可以很容易修复发生概率较低的片状错误。
+
+
+通常，您需要在每个单个网络请求的微服务中编写此重试逻辑。值得庆幸的是，Istio 提供了开箱即用的功能，因此您根本不需要修改代码！
+
+
+让我们修改 `VirtualServices` 以添加一些重试逻辑。这是更新的规则。每个都有一个额外的部分，如下所示：
+
+```
+  retries:
+     attempts: 3
+     perTryTimeout: 2s
+```
+
+这意味着 Istio 尝试请求三次，并且每次重试将等待2秒（如果下游服务挂起）。您的应用程序只是将其视为一个请求，所有重试复杂性都被抽象掉了。
+
+```
+kubectl apply -f ./configs/istio/routing-2.yaml
+```
+
+现在所有错误都消失了
+
+![working](images/working.gif)
+
+
+## 设置 canay 访问
+
+之前的中间件有两个服务 prod 和 canay ，目前的规则是将所有的流量发给 prod ,但是我们需要使开发团队和测试人员能够访问它,使用 istio 很容易办到
+
+路由规则可以基于 Header，cookie 等方式进行条件路由。我们可以检查用户是否属于受信任组，并设置一个 cookie ，让他们访问 canay。
+
+```
   http:
   - match:
     - headers:
@@ -298,21 +244,21 @@ You can see the new rule in [this file](./configs/istio/routing-3.yaml)
       perTryTimeout: 2s
 ```
 
-You can see that we are checking if the "x-dev-user" header is set to "super-secret" and if it is then we send traffic to the canary subset. Otherwise, traffic gets sent to prod.
 
-Apply this file:
+你可以看到我们添加了一个 x-dev-user 的 header ，设置值为 super-secret ，并且当我们添加该 header 发送流量时，走这个路由策略就可以访问 canay 了。
 
-`kubectl apply -f ./configs/istio/routing-3.yaml`
+```
+kubectl apply -f ./configs/istio/routing-3.yaml
+```
 
-And now, when you send the proper header, Istio automatically routes you to the right service.
+![x-dev-user](images/x-dev-user.gif)
 
-![Route to Canary](./x-dev-user.gif)
+使用 Istio 时，所有服务都必须转发下游服务所需的标头。我建议对某些标头进行标准化，并确保在与下游服务交谈时始终转发它们。有许多库可以自动执行此操作。
 
-When working with Istio, it is important that all your services forward the headers needed by the downstream services. I recommend standardizing on some headers, and ensuring that you always forward them when talking to a downstream service. There are many libraries that can do this automatically.
 
-# Monitoring and Tracing
+## 监控和跟踪
 
-A awesome benefit of Istio is that it automatically adds tracing and monitoring support to your apps. While monitoring is added for free, tracing needs you to forward the trace headers that Istio's Ingress controller automatically injects so Istio can stitch together the requests. You need to forward the following headers in your code:
+istio 的一个很棒的好处是它会自动为您的应用添加跟踪和监控支持。虽然免费添加监控，但跟踪需要您转发 Istio 的 Ingress 控制器自动注入的跟踪标头，以便 Istio 可以将请求拼接在一起。您需要在代码中转发以下 header ：
 
 ```
 [
@@ -326,39 +272,43 @@ A awesome benefit of Istio is that it automatically adds tracing and monitoring 
 ]
 ```
 
-The sample microservice you deployed already does this.
+部署的 demo 微服务已经实现了这一点。
 
-## Viewing Traces
 
-Now, you can open [Jaeger](http://localhost:16686/), select the "frontend" service, and click "Find Traces". Istio will sample your requests, so not every request will be logged.
+### 查看 traces
 
-Click a Trace, and you can see a waterfall of the requests. Because we set the "fail" header, we can also see Istio's auto-retry mechanism in action!
+现在，您可以打开 Jaeger ，选择 "frontend" 服务，然后单击 "Find Traces" 。Istio将对您的请求进行采样，因此不会记录每个请求。
 
-![Jaeger Trace](./jaeger.gif)
+单击 Trace ,您可以看到请求的瀑布。因为我们设置了 "fail" header，我们也可以看到 Istio 的自动重试机制！
 
-## Viewing Metrics
+![jaeger](images/jaeger.gif)
 
-To view Metrics, open [Grafana](http://localhost:3000/dashboard/db/istio-dashboard)
+### 查看 metrics
 
-You can see a lot of cool metrics in the default Istio dashboard, or customize it as you see fit!
+要查看指标，请打开 Grafana
 
-![Grafana Dashboard](./grafana.png)
+您可以在默认的 Istio 仪表板中看到许多很酷的指标，或者根据您的需要自定义它！
 
-# OpenCensus
+![grafana](images/grafana.png)
 
-While Istio is great for network level tracing and metrics, it is important to also collect information about what is going on *inside* you app. This is where OpenCensus comes into play. OpenCensus is a vendor-neutral tracing and metrics library thats built for mulitple popular langauges.
 
-Let's add OpenCensus to our app and see how it can help!
+## OpenCensus
 
-## Automatic Header Forwarding
+虽然 Istio 非常适合网络级别跟踪和指标，但重要的是还要收集有关您应用内部内容的信息。这就是 OpenCensus 发挥作用的地方。OpenCensus 是一个供应商中立的跟踪和指标库，专为多种流行语言而构建。
 
-If you remember from the tracing section of this README, we had to manually foward all those `x-blah-blah` headers for each incoming and outgoing reqest.
+让我们将 OpenCensus 添加到我们的应用程序中，看看它是如何帮助的！
 
-One really cool thing about OpenCensus is that it can automatically forward these headers for the majorty of popular server frameworks.
 
-You can see the full code [here](./code/code-opencensus-simple/index.js), but the  key part is at the top:
+### 自动添加 header 转发
 
-```javascript
+如果您还记得本自述文件的跟踪部分，我们必须手动将 `x-blah-blah` 为每个传入和传出请求提供所有这些标头。
+
+关于 OpenCensus 的一个非常酷的事情是它可以自动转发这些标题，用于流行的服务器框架。
+
+
+您可以在[此处](https://github.com/kuops/Istio101/blob/master/code/code-opencensus-simple/index.js)查看完整代码，但关键部分位于顶部：
+
+```
 const tracing = require('@opencensus/nodejs');
 const propagation = require('@opencensus/propagation-b3');
 const b3 = new propagation.B3Format();
@@ -369,25 +319,27 @@ tracing.start({
 });
 ```
 
-Just put this little snippit at the top of your code and every single request will get trace headers automatically added! You can change the `samplingRate` if you don't want every request to be traced (which can get overwhleming for large systems).
+只需将这个小 snippit 放在代码的顶部，每个请求都会自动添加跟踪头！samplingRate 如果您不希望跟踪每个请求（对于大型系统可能会超支），您可以更改。
 
-While our test app only has one route and one downstream call, you can see how this would be very useful for a real server which has many routes and downstream calls. Without this, you would have to add header forwarding to every single route and downstream call yourself!
+虽然我们的测试应用程序只有一个路由和一个下游呼叫，但您可以看到这对于具有多个路由和下游呼叫的真实服务器非常有用。如果没有这个，您将不得不向每个路由添加标头转发并自己下游调用！
 
-Let's deploy this code:
+让我们部署这段代码：
 
-`make deploy-opencensus-code`
+```
+kubectl apply -f ./configs/opencensus/config.yaml
+sed "s@<DOCKER_REPO>@${DOCKER_REPO}@g" ./configs/opencensus/deployment.yaml | kubectl apply -f -
+```
+你不应该注意到任何不同的东西 (表示它使用 "opencensus simple" 的文本表示)，但最大的区别是我们的代码不再需要手动转发这些 Header。
 
-You shouldn't notice anything different (expct for the text indicating its using "opencensus simple"), but the big difference is our code no longer has to manually forward these headers.
+### 应用内跟踪
 
-## In-app Tracing
+虽然跟踪网络要求非常好，但 OpenCensus 还可以跟踪应用程序内部的函数调用，并将它们与网络跟踪结合在一起！这使您可以更清楚地了解微服务中的具体内容。
 
-While tracing network reqests is great, OpenCensus can also trace function calls inside your app and tie them together with the network traces! This give you more visibility into what exactly is going on inside your microservices.
+你可以在[这里](https://github.com/kuops/Istio101/blob/master/code/code-opencensus-full/index.js)看到完整的代码。
 
-You can see the full code [here](./code/code-opencensus-full/index.js).
+在设置中，我们需要告诉 OpenCensus 如何连接到 Istio namepsace 中运行的 Jaeger 实例。
 
-In the setup, we need to tell OpenCensus how to connect to the Jaeger instance that is running in the Istio namepsace.
-
-```javascript
+```
 // Set up jaeger
 const jaeger = require('@opencensus/exporter-jaeger')
 
@@ -407,21 +359,21 @@ tracing.start({
 });
 ```
 
-The environment variables that the code uses are set in a Kubernetes [ConfigMap](./configs/opencensus/config.yaml).
-In the `tracing.start` function, we simply pass in the exporter that we created with the Jaeger details, and that's it! We are all set up!
+代码使用的环境变量在 Kubernetes ConfigMap 中设置。在 `tracing.start` 函数中，我们只是传入我们用 Jaeger 细节创建的导出器，就是这样！我们都成立了！
 
-Now you can create custom spans to trace anything you want. Because OpenCensus automatically creates "rootSpans" for all incoming web requests, you can start creating "childSpans" inside the routes very easily:
 
-```javascript
+现在，您可以创建自定义跨度以跟踪您想要的任何内容。因为 OpenCensus 会自动为所有传入的Web请求创建 "rootSpans"，所以您可以非常轻松地在路径中创建 "childSpans":
+
+```
   const childSpan = tracing.tracer.startChildSpan('Child Span!')
   // Do Stuff
   childSpan.end()
 ```
 
-If you want to create grandchildren, just make sure to set the parentSpanId to the child's id.
+如果你想创建孙子，只需确保将 parentSpanId 设置为孩子的id。
 
-```javascript
-  const childSpan = tracing.tracer.startChildSpan('Child Span!')
+```
+ const childSpan = tracing.tracer.startChildSpan('Child Span!')
     // Do Child Stuff
     const grandchildSpan = tracing.tracer.startChildSpan('Grandchild Span!')
     grandchildSpan.parentSpanId = childSpan.id
@@ -430,39 +382,24 @@ If you want to create grandchildren, just make sure to set the parentSpanId to t
   childSpan.end()
 ```
 
-In our code, we calculate a random Fibonacci number and then sleep for a bit. It's a silly example, but it demonstrates tracing well!
+部署代码
 
-![Jaeger OpenCensus](./jaeger-opencensus.png)
+```
+sed "s@<DOCKER_REPO>@${DOCKER_REPO}@g" ./configs/opencensus/deployment2.yaml | kubectl apply -f -
+```
 
-You can see all the nested traces, and the really cool thing is that you can see the traces for all three microservices at the same time! This is because OpenCensus and Istio are using the same IDs throughout the stack.
+在我们的代码中，我们计算一个随机的 Fibonacci 数，然后稍微休眠一下。这是一个愚蠢的例子，但它展示了很好的追踪！
 
-# Custom Metrics
+![jaeger-opencensus.png](images/jaeger-opencensus.png)
 
-While Istio can give you a lot of network level metrics, once again it is not able to give you app specific metrics that you might care about. Just like app-level tracing, OpenCensus can help you with app-level metrics as well.
-
-**COMING SOOON!**
-
-# Shutting Down The Test Cluster
-
-`make delete-cluster`
-
-or
-
-`make delete-cluster PROJECT_ID=your-custom-id-here ZONE=your-custom-zone`
+你可以看到所有嵌套的痕迹，真正酷的是你可以同时看到所有三个微服务的痕迹！这是因为 OpenCensus 和 Istio 在整个堆栈中使用相同的ID。
 
 
-# Advanced
 
-## Customize the Istio Deployment
+## 清理
 
-If you want to customize the components of Istio that are installed, you can do that with Helm! First, you need to download the 1.0 release of Istio which contains the Helm charts you need.
-
-`make download-istio`
-
-Then, you can generate the Istio yaml that I use for this demo with the following command:
-
-`helm template istio-1.0.0/install/kubernetes/helm/istio --name istio --namespace istio-system --set global.mtls.enabled=true --set tracing.enabled=true --set servicegraph.enabled=true --set grafana.enabled=true > istio.yaml`
-
-Feel free to [modify this command](https://istio.io/docs/reference/config/installation-options/) to suite your needs, but note that this demo won't work without these things enabled!
-
-NOTE: This is not an official Google product
+```
+kubectl delete -f ./configs/kube
+kubectl delete -f ./configs/istio
+kubectl delete -f ./configs/opencensus
+```
