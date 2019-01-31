@@ -256,7 +256,78 @@ kubectl apply -f ./configs/istio/routing-3.yaml
 使用 Istio 时，所有服务都必须转发下游服务所需的标头。我建议对某些标头进行标准化，并确保在与下游服务交谈时始终转发它们。有许多库可以自动执行此操作。
 
 
-### 监控和跟踪
+## 监控和跟踪
 
+istio 的一个很棒的好处是它会自动为您的应用添加跟踪和监控支持。虽然免费添加监控，但跟踪需要您转发 Istio 的 Ingress 控制器自动注入的跟踪标头，以便 Istio 可以将请求拼接在一起。您需要在代码中转发以下 header ：
+
+```
+[
+    'x-request-id',
+    'x-b3-traceid',
+    'x-b3-spanid',
+    'x-b3-parentspanid',
+    'x-b3-sampled',
+    'x-b3-flags',
+    'x-ot-span-context',
+]
+```
+
+部署的 demo 微服务已经实现了这一点。
+
+
+### 查看 traces
+
+现在，您可以打开 Jaeger ，选择 "frontend" 服务，然后单击 "Find Traces" 。Istio将对您的请求进行采样，因此不会记录每个请求。
+
+单击 Trace ,您可以看到请求的瀑布。因为我们设置了 "fail" header，我们也可以看到 Istio 的自动重试机制！
+
+![jaeger](images/jaeger.gif)
+
+### 查看 metrics
+
+要查看指标，请打开 Grafana
+
+您可以在默认的 Istio 仪表板中看到许多很酷的指标，或者根据您的需要自定义它！
+
+![grafana](images/grafana.png)
+
+
+## OpenCensus
+
+虽然 Istio 非常适合网络级别跟踪和指标，但重要的是还要收集有关您应用内部内容的信息。这就是 OpenCensus 发挥作用的地方。OpenCensus 是一个供应商中立的跟踪和指标库，专为多种流行语言而构建。
+
+让我们将 OpenCensus 添加到我们的应用程序中，看看它是如何帮助的！
+
+
+### 自动添加 header 转发
+
+如果您还记得本自述文件的跟踪部分，我们必须手动将 `x-blah-blah` 为每个传入和传出请求提供所有这些标头。
+
+关于 OpenCensus 的一个非常酷的事情是它可以自动转发这些标题，用于流行的服务器框架。
+
+
+您可以在[此处](https://github.com/kuops/Istio101/blob/master/code/code-opencensus-simple/index.js)查看完整代码，但关键部分位于顶部：
+
+```
+const tracing = require('@opencensus/nodejs');
+const propagation = require('@opencensus/propagation-b3');
+const b3 = new propagation.B3Format();
+
+tracing.start({
+	propagation: b3,
+	samplingRate: 1.0
+});
+```
+
+只需将这个小 snippit 放在代码的顶部，每个请求都会自动添加跟踪头！samplingRate 如果您不希望跟踪每个请求（对于大型系统可能会超支），您可以更改。
+
+虽然我们的测试应用程序只有一个路由和一个下游呼叫，但您可以看到这对于具有多个路由和下游呼叫的真实服务器非常有用。如果没有这个，您将不得不向每个路由添加标头转发并自己下游调用！
+
+让我们部署这段代码：
+
+```
+kubectl apply -f ./configs/opencensus/config.yaml
+sed "s@<DOCKER_REPO>@${DOCKER_REPO}@g" ./configs/opencensus/deployment.yaml | kubectl apply -f -
+```
 
 
