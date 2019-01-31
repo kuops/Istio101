@@ -27,7 +27,7 @@ spec:
     spec:
       containers:
       - name: frontend
-        image: gcr.io/<PROJECT_ID>/istio-opencensus-full:1.0
+        image: <DOCKER_REPO>/istio-opencensus-full:1.0
         imagePullPolicy: Always
         ports:
         - containerPort: 3000
@@ -66,7 +66,7 @@ spec:
     spec:
       containers:
       - name: middleware
-        image: gcr.io/<PROJECT_ID>/istio-opencensus-full:1.0
+        image: <DOCKER_REPO>/istio-opencensus-full:1.0
         imagePullPolicy: Always
         ports:
         - containerPort: 3000
@@ -105,7 +105,7 @@ spec:
     spec:
       containers:
       - name: backend
-        image: gcr.io/<PROJECT_ID>/istio-opencensus-full:1.0
+        image: <DOCKER_REPO>/istio-opencensus-full:1.0
         imagePullPolicy: Always
         ports:
         - containerPort: 3000

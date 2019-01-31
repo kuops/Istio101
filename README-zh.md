@@ -329,5 +329,37 @@ tracing.start({
 kubectl apply -f ./configs/opencensus/config.yaml
 sed "s@<DOCKER_REPO>@${DOCKER_REPO}@g" ./configs/opencensus/deployment.yaml | kubectl apply -f -
 ```
+你不应该注意到任何不同的东西 (表示它使用 "opencensus simple" 的文本表示)，但最大的区别是我们的代码不再需要手动转发这些 Header。
+
+### 应用内跟踪
+
+虽然跟踪网络要求非常好，但 OpenCensus 还可以跟踪应用程序内部的函数调用，并将它们与网络跟踪结合在一起！这使您可以更清楚地了解微服务中的具体内容。
+
+你可以在[这里](https://github.com/kuops/Istio101/blob/master/code/code-opencensus-full/index.js)看到完整的代码。
+
+在设置中，我们需要告诉 OpenCensus 如何连接到 Istio namepsace 中运行的 Jaeger 实例。
+
+```
+// Set up jaeger
+const jaeger = require('@opencensus/exporter-jaeger')
+
+const jaeger_host = process.env.JAEGER_HOST || 'localhost'
+const jaeger_port = process.env.JAEGER_PORT || '6832'
+
+const exporter = new jaeger.JaegerTraceExporter({
+	host: jaeger_host,
+    port: jaeger_port,
+	serviceName: service_name,
+});
+
+tracing.start({
+	propagation: b3,
+	samplingRate: 1.0,
+    exporter: exporter
+});
+```
+
+代码使用的环境变量在 Kubernetes ConfigMap 中设置。在 `tracing.start` 函数中，我们只是传入我们用 Jaeger 细节创建的导出器，就是这样！我们都成立了！
 
 
+现在，您可以创建自定义跨度以跟踪您想要的任何内容。因为 OpenCensus 会自动为所有传入的Web请求创建 "rootSpans"，所以您可以非常轻松地在路径中创建“childSpans”：
